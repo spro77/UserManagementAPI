@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -11,6 +13,47 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Error-handling middleware (first)
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+        var error = new { error = "Internal server error." };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(error));
+    }
+});
+
+// Authentication middleware (second)
+app.Use(async (context, next) =>
+{
+    var token = context.Request.Headers["Authorization"].FirstOrDefault()?.Replace("Bearer ", "");
+    if (string.IsNullOrEmpty(token) || !IsValidToken(token))
+    {
+        context.Response.StatusCode = 401;
+        context.Response.ContentType = "application/json";
+        var error = new { error = "Unauthorized" };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(error));
+        return;
+    }
+    await next();
+});
+
+// Logging middleware (last)
+app.Use(async (context, next) =>
+{
+    var method = context.Request.Method;
+    var path = context.Request.Path;
+    await next();
+    var statusCode = context.Response.StatusCode;
+    Console.WriteLine($"{method} {path} => {statusCode}");
+});
 
 app.UseHttpsRedirection();
 
@@ -97,6 +140,13 @@ app.MapDelete("/users/{id:int}", (int id) =>
 .WithName("DeleteUser");
 
 app.Run();
+
+// Helper for token validation
+bool IsValidToken(string token)
+{
+    // For demo: accept token "valid-token" only
+    return token == "valid-token";
+}
 
 record User
 {
